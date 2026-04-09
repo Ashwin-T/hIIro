@@ -1,0 +1,18 @@
+# Trigger phrases — one per line, case-insensitive
+# Whisper may mishear "hiro" so add common variants
+# Edit this file to customize your wake phrases
+
+hey hiro
+hey hero
+hey hiero
+hi hiro
+hi hero
+yo hiro
+yo hero
+ok hiro
+okay hiro
+hiro
+hero
+hiero
+hierro
+hilo

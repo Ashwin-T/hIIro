@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# UV
+uv.lock
+
+# Environment / secrets
+.env
+config/.env
+
+# Audio artifacts
+*.wav
+voice_profile.npy
+voice_profile/
+
+# Models (downloaded at runtime)
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+logs/
+
+# Cache
+.cache
+
+# Models + voice
+pretrained_models/
+config/voice_profile.npy
+config/schedules.json
+
+
+
