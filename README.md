@@ -1,4 +1,4 @@
-# hIIRO
+# hIIRO 
 
 The direct evolution of hiro: Ashwin's customizable smart room system.
 
