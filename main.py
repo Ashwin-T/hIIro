@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="hiro", description="hiro — voice-locked agentic assistant")
-    p.add_argument("--mode", choices=["voice", "terminal"], default="voice")
+    p.add_argument("--mode", choices=["voice", "terminal", "web"], default="voice")
     p.add_argument("--name", help="Override assistant name")
     p.add_argument("--enroll", action="store_true", help="Re-record voice profile")
     p.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
@@ -193,6 +193,32 @@ def enroll_voice(cfg):
 # ENTRY
 # ══════════════════════════════════════════════════════════════════════════════
 
+_alsa_error_handler = None  # prevent GC of ctypes callback
+
+def _suppress_noise() -> None:
+    """Silence noisy third-party loggers and ALSA/JACK stderr spam."""
+    global _alsa_error_handler
+    import ctypes
+
+    # Quiet speechbrain, httpx, etc. — let them log only warnings+
+    for name in ("speechbrain", "httpx", "httpcore", "urllib3", "filelock"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # Suppress ALSA/JACK C-level stderr noise
+    try:
+        libc = ctypes.cdll.LoadLibrary("libasound.so.2")
+        c_error_handler = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int,
+                                           ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
+        _alsa_error_handler = c_error_handler(lambda *_: None)
+        libc.snd_lib_error_set_handler(_alsa_error_handler)
+    except Exception:
+        pass
+
+    # Suppress pkg_resources deprecation warning
+    import warnings
+    warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+
+
 def main():
     args = _parser().parse_args()
 
@@ -200,6 +226,7 @@ def main():
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)-7s %(name)s  %(message)s",
     )
+    _suppress_noise()
 
     # Apply CLI overrides before loading config
     if args.name:
@@ -232,6 +259,36 @@ def main():
     if args.mode == "terminal":
         _scheduler.start(agent, None)
         terminal_loop(cfg, agent)
+    elif args.mode == "web":
+        import threading
+        import uvicorn
+        from stt import init as stt_init, init_server as stt_init_server
+        from tts import TTS
+        from server import create_app
+
+        tts_v = TTS(groq_api_key=cfg.groq_api_key)
+        _scheduler.start(agent, tts_v)
+        dnd_start(tts_v)
+
+        # Init STT for server-side transcription of remote clients
+        stt_init_server(cfg)
+
+        app = create_app(cfg, agent, tts_v)
+
+        # Also init local mic for the "master" device (Pi 5 itself)
+        try:
+            stt_init(cfg)
+            master_thread = threading.Thread(
+                target=voice_loop, args=(cfg, agent, tts_v),
+                daemon=True, name="master-voice",
+            )
+            master_thread.start()
+            log.info("Master voice loop running on local mic")
+        except Exception as e:
+            log.warning("No local mic available — running web-only: %s", e)
+
+        log.info("Starting web server on %s:%d", cfg.web_host, cfg.web_port)
+        uvicorn.run(app, host=cfg.web_host, port=cfg.web_port, log_level=args.log_level.lower())
     else:
         from stt import init as stt_init
         from tts import TTS

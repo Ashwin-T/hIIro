@@ -21,8 +21,8 @@ class Config:
     # LLM
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     model: str             = field(default_factory=lambda: os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001"))
-    max_tokens: int        = field(default_factory=lambda: int(os.getenv("MAX_TOKENS", "512")))
-    max_history: int       = field(default_factory=lambda: int(os.getenv("MAX_HISTORY", "10")))
+    max_tokens: int        = field(default_factory=lambda: int(os.getenv("MAX_TOKENS", "1024")))
+    max_history: int       = field(default_factory=lambda: int(os.getenv("MAX_HISTORY", "25")))
 
     # STT / Voice pipeline
     groq_api_key: str          = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
@@ -38,6 +38,10 @@ class Config:
     spotify_redirect_uri: str  = field(default_factory=lambda: os.getenv("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback"))
     mqtt_broker: str           = field(default_factory=lambda: os.getenv("MQTT_BROKER", "localhost"))
     mqtt_port: int             = field(default_factory=lambda: int(os.getenv("MQTT_PORT", "1883")))
+
+    # Web server
+    web_host: str = field(default_factory=lambda: os.getenv("WEB_HOST", "0.0.0.0"))
+    web_port: int = field(default_factory=lambda: int(os.getenv("WEB_PORT", "8081")))
 
     def validate(self) -> None:
         if not self.anthropic_api_key:

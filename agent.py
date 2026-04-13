@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from typing import Any, Callable
 
 import anthropic
@@ -27,8 +29,23 @@ class Agent:
             "Keep responses concise — 1-3 sentences. Use tools when they help. "
             "Respond in plain speech, no markdown or bullet points."
         )
-        self._tools: list[dict] = []
+        self._tools: list[dict] = [
+            {"type": "web_search_20250305", "name": "web_search"},
+        ]
         self._fns: dict[str, Callable] = {}
+        self._lock = threading.Lock()
+        self._debug_cb: Callable[[str, dict], None] | None = None
+
+    def set_debug_callback(self, cb: Callable[[str, dict], None]) -> None:
+        """Set a callback for debug events: cb(event_type, data)."""
+        self._debug_cb = cb
+
+    def _debug(self, event: str, data: dict) -> None:
+        if self._debug_cb:
+            try:
+                self._debug_cb(event, data)
+            except Exception:
+                pass
 
     # ── Skill registration ────────────────────────────────────────────────────
 
@@ -48,20 +65,26 @@ class Agent:
 
     # ── Core loop ─────────────────────────────────────────────────────────────
 
-    def run(self, user_input: str) -> str:
-        """Full agentic turn: user text → tool calls → final response."""
-        messages = list(self.history) + [{"role": "user", "content": user_input}]
+    def run(self, user_input: str, device_id: str = "master") -> str:
+        """Full agentic turn: user text → tool calls → final response.
+        Thread-safe — only one request processed at a time."""
+        with self._lock:
+            self._debug("request_start", {"device_id": device_id, "input": user_input})
+            t0 = time.monotonic()
+            messages = list(self.history) + [{"role": "user", "content": user_input}]
 
-        try:
-            reply = self._loop(messages)
-        except anthropic.APIError as e:
-            log.error("API error: %s", e)
-            return "Sorry, something went wrong."
+            try:
+                reply = self._loop(messages)
+            except anthropic.APIError as e:
+                log.error("API error: %s", e)
+                return "Sorry, something went wrong."
 
-        self.history.append({"role": "user", "content": user_input})
-        self.history.append({"role": "assistant", "content": reply})
-        self._trim()
-        return reply
+            self.history.append({"role": "user", "content": user_input})
+            self.history.append({"role": "assistant", "content": reply})
+            self._trim()
+            elapsed = time.monotonic() - t0
+            self._debug("request_done", {"device_id": device_id, "llm_ms": int(elapsed * 1000)})
+            return reply
 
     def _loop(self, messages: list[dict]) -> str:
         from datetime import datetime
@@ -84,24 +107,41 @@ class Agent:
             if resp.stop_reason == "end_turn":
                 return self._text(resp)
 
-            # Tool use — execute and feed back
+            # Tool use — execute custom skills and feed back
             if resp.stop_reason == "tool_use":
                 messages = list(kw["messages"])
                 messages.append({"role": "assistant", "content": resp.content})
 
                 results = []
                 for block in resp.content:
+                    if block.type == "web_search_tool_result":
+                        self._debug("tool_call", {"name": "web_search", "args": {}})
+                        self._debug("tool_result", {
+                            "name": "web_search",
+                            "result": "(handled by Claude)",
+                            "latency_ms": 0,
+                        })
+                        continue
                     if block.type != "tool_use":
                         continue
+                    self._debug("tool_call", {"name": block.name, "args": block.input})
+                    t_tool = time.monotonic()
                     out = self._exec(block.name, block.input)
+                    t_tool_done = time.monotonic()
                     log.info("[skill] %s → %s", block.name, str(out)[:120])
+                    self._debug("tool_result", {
+                        "name": block.name,
+                        "result": str(out)[:200],
+                        "latency_ms": int((t_tool_done - t_tool) * 1000),
+                    })
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": json.dumps(out, default=str),
                     })
 
-                messages.append({"role": "user", "content": results})
+                if results:
+                    messages.append({"role": "user", "content": results})
                 kw["messages"] = messages
                 continue
 

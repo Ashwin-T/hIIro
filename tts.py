@@ -1,7 +1,9 @@
 """Text-to-speech — Groq Orpheus (cloud) with pyttsx3 fallback."""
 from __future__ import annotations
 
+import io
 import logging
+import struct
 import subprocess
 import tempfile
 import threading
@@ -99,6 +101,51 @@ class TTS:
         log.debug("TTS (local): '%s…'", text[:60])
         self._local.say(text)
         self._local.runAndWait()
+
+    def synthesize(self, text: str) -> bytes | None:
+        """Return WAV audio bytes without playing. For web/remote clients."""
+        if not text or not self._groq:
+            return None
+        try:
+            chunks = self._chunk(text, 200)
+            wav_parts: list[bytes] = []
+            for chunk in chunks:
+                resp = self._groq.audio.speech.create(
+                    model="canopylabs/orpheus-v1-english",
+                    voice="autumn",
+                    input=chunk,
+                    response_format="wav",
+                )
+                wav_parts.append(resp.read())
+            if len(wav_parts) == 1:
+                return wav_parts[0]
+            return self._concat_wav(wav_parts)
+        except Exception as e:
+            log.error("TTS synthesize error: %s", e)
+            return None
+
+    @staticmethod
+    def _concat_wav(parts: list[bytes]) -> bytes:
+        """Concatenate multiple WAV files into one."""
+        if not parts:
+            return b""
+        # Parse header from first part
+        first = parts[0]
+        # WAV header is 44 bytes for standard PCM
+        header = first[:44]
+        pcm_data = io.BytesIO()
+        for i, part in enumerate(parts):
+            if i == 0:
+                pcm_data.write(part[44:])
+            else:
+                # Skip header of subsequent parts
+                pcm_data.write(part[44:])
+        raw = pcm_data.getvalue()
+        # Fix data size in header
+        out = bytearray(header)
+        struct.pack_into("<I", out, 4, 36 + len(raw))   # RIFF chunk size
+        struct.pack_into("<I", out, 40, len(raw))        # data chunk size
+        return bytes(out) + raw
 
     def set_dnd(self, enabled: bool, duration_minutes: float = 0) -> None:
         """Enable or disable Do Not Disturb. If duration > 0, auto-disables after that time."""

@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 _MODULES = [
     "skills.time_tools",
     "skills.weather",
-    "skills.search",
+    # "skills.search" — replaced by Claude's native web_search tool
     "skills.stocks",
     "skills.spotify",
     "skills.smarthome",

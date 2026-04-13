@@ -7,9 +7,12 @@ On first run, prompts user to speak for 10 seconds to enroll their voice.
 """
 from __future__ import annotations
 
+import logging
 import tempfile
 import time
 import wave
+
+log = logging.getLogger(__name__)
 from pathlib import Path
 
 import numpy as np
@@ -68,7 +71,7 @@ def init(cfg: Config) -> None:
         savedir="pretrained_models/spkrec-ecapa-voxceleb",
         run_opts={"device": "cpu"},
     )
-    print("[SpeechBrain ECAPA-TDNN loaded]")
+    log.info("SpeechBrain ECAPA-TDNN loaded")
 
     # Groq
     if not cfg.groq_api_key:
@@ -79,10 +82,38 @@ def init(cfg: Config) -> None:
     # Voice profile — enroll if missing
     if _profile_path.exists():
         _profile = np.load(_profile_path)
-        print(f"[voice profile loaded from {_profile_path}]")
+        log.info("Voice profile loaded from %s", _profile_path)
     else:
-        print("[no voice profile found — starting enrollment]")
+        log.warning("No voice profile found — starting enrollment")
         _enroll()
+
+
+def init_server(cfg: Config) -> None:
+    """Headless init for web server mode — Groq + SpeechBrain only, no PyAudio/mic."""
+    global _verifier, _profile, _groq_client, _speaker_threshold, _profile_path
+
+    if _groq_client is not None:
+        return
+
+    _speaker_threshold = cfg.speaker_threshold
+    _profile_path = Path(cfg.speaker_profile)
+
+    from speechbrain.inference.speaker import EncoderClassifier
+    _verifier = EncoderClassifier.from_hparams(
+        source="speechbrain/spkrec-ecapa-voxceleb",
+        savedir="pretrained_models/spkrec-ecapa-voxceleb",
+        run_opts={"device": "cpu"},
+    )
+    log.info("SpeechBrain ECAPA-TDNN loaded (server mode)")
+
+    if not cfg.groq_api_key:
+        raise ValueError("GROQ_API_KEY is required — add it to config/.env")
+    from groq import Groq
+    _groq_client = Groq(api_key=cfg.groq_api_key)
+
+    if _profile_path.exists():
+        _profile = np.load(_profile_path)
+        log.info("Voice profile loaded from %s", _profile_path)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -179,7 +210,7 @@ def _transcribe(audio_int16: np.ndarray) -> str | None:
         text = resp.text.strip()
         return text if text else None
     except Exception as e:
-        print(f"[groq error: {e}]")
+        log.error("Groq STT error: %s", e)
         return None
 
 
@@ -211,6 +242,43 @@ def _strip_trigger(text: str) -> str | None:
 # Public API
 # ══════════════════════════════════════════════════════════════════════════════
 
+def transcribe_bytes(audio_bytes: bytes) -> str | None:
+    """Transcribe raw 16kHz mono PCM or WAV bytes via Groq Whisper.
+    For web/remote clients that send audio over WebSocket."""
+    if _groq_client is None:
+        raise RuntimeError("stt.init() or stt.init_server() must be called first")
+    import soundfile as sf
+    import io
+
+    # Try reading as WAV/FLAC/etc first, fall back to raw PCM
+    try:
+        data, sr = sf.read(io.BytesIO(audio_bytes))
+        # Convert to int16
+        audio_int16 = (data * 32768).astype(np.int16)
+        if len(audio_int16.shape) > 1:
+            audio_int16 = audio_int16[:, 0]  # mono
+    except Exception:
+        audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
+
+    return _transcribe(audio_int16)
+
+
+def verify_speaker_bytes(audio_bytes: bytes) -> tuple[bool, float]:
+    """Verify speaker identity from raw audio bytes."""
+    import soundfile as sf
+    import io
+
+    try:
+        data, sr = sf.read(io.BytesIO(audio_bytes))
+        audio_int16 = (data * 32768).astype(np.int16)
+        if len(audio_int16.shape) > 1:
+            audio_int16 = audio_int16[:, 0]
+    except Exception:
+        audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
+
+    return _verify_speaker(audio_int16)
+
+
 def listen_for_command() -> str | None:
     """
     Block until speech detected -> speaker verified -> transcript returned.
@@ -227,7 +295,7 @@ def listen_for_command() -> str | None:
         input=True,
         frames_per_buffer=FRAME_SIZE,
     )
-    print("[listening]")
+    log.debug("Listening...")
 
     try:
         while True:
@@ -264,7 +332,7 @@ def listen_for_command() -> str | None:
             ok, sim = _verify_speaker(audio)
             t1 = time.monotonic()
             if not ok:
-                print(f"[rejected sim={sim:.2f} {t1-t0:.2f}s]")
+                log.debug("Rejected sim=%.2f %.2fs", sim, t1-t0)
                 continue
 
             # 2) Transcribe — what did you say?
@@ -273,14 +341,14 @@ def listen_for_command() -> str | None:
             if not text:
                 continue
 
-            print(f"[you ({sim:.2f}): {text} | {t2-t0:.2f}s]")
+            log.info("You (%.2f): %s | %.2fs", sim, text, t2-t0)
 
             # 3) Trigger word check — fuzzy match "hiro" at the start
             cmd = _strip_trigger(text)
             if cmd is None:
                 continue  # didn't say the trigger word
 
-            print(f"[command: {cmd}]")
+            log.info("Command: %s", cmd)
             return cmd
     finally:
         stream.stop_stream()

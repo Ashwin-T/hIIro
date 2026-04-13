@@ -30,6 +30,10 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
     "speedtest-cli>=2.1.3",
+    # Web server
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "soundfile>=0.12.0",
 ]
 
 [project.scripts]
@@ -54,4 +58,4 @@ torch = { index = "pytorch-cpu" }
 torchaudio = { index = "pytorch-cpu" }
 
 [tool.hatch.build.targets.wheel]
-include = ["*.py", "skills/**"]
+include = ["*.py", "skills/**", "server/**", "static/**"]

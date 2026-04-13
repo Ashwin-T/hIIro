@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>hIIro</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="header-left">
+        <h1>hIIro</h1>
+        <span id="status" class="status disconnected">disconnected</span>
+      </div>
+      <div class="header-right">
+        <div class="mode-toggle">
+          <button id="btn-voice" class="mode-btn active" onclick="setMode('voice')">Voice</button>
+          <button id="btn-text" class="mode-btn" onclick="setMode('text')">Text</button>
+        </div>
+        <button id="btn-theme" class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
+          <svg id="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg id="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+          </svg>
+        </button>
+        <button id="btn-debug" class="icon-btn" onclick="toggleDebug()" title="Debug panel">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="chat" class="chat"></div>
+
+    <div id="input-area" class="input-area">
+      <div id="voice-input" class="voice-input">
+        <button id="btn-mic" class="mic-btn" onmousedown="startRecording()" onmouseup="stopRecording()" ontouchstart="startRecording()" ontouchend="stopRecording()">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
+        <span class="mic-hint">Hold to talk</span>
+      </div>
+      <div id="text-input" class="text-input hidden">
+        <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off" />
+        <button id="btn-send" onclick="sendText()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="debug-panel" class="debug-panel hidden">
+      <div class="debug-header">
+        <span>Debug Console</span>
+        <button class="icon-btn" onclick="toggleDebug()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div id="debug-self" class="debug-section">
+        <h3>Your Device</h3>
+        <div id="self-id" class="debug-row" style="font-family:var(--mono);font-size:0.85rem">--</div>
+      </div>
+      <div id="debug-devices" class="debug-section">
+        <h3>Connected Devices</h3>
+        <div id="device-list" class="device-list">--</div>
+      </div>
+      <div id="debug-latency" class="debug-section">
+        <h3>Latency</h3>
+        <div class="debug-row"><span>STT</span><span id="lat-stt">--</span></div>
+        <div class="debug-row"><span>LLM</span><span id="lat-llm">--</span></div>
+        <div class="debug-row"><span>TTS</span><span id="lat-tts">--</span></div>
+      </div>
+      <div id="debug-tools" class="debug-section">
+        <h3>Tool Calls</h3>
+        <div id="tool-log" class="tool-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
